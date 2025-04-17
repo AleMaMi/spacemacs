@@ -1701,7 +1701,27 @@ local directory:
 
 Installs a multi-file package from a local directory.  Use
 the :path attribute with a PATH like \"/path/to/dir\"."
-  (quelpa-check-hash name config (expand-file-name (plist-get config :path)) dir))
+  (let ((temp-dir (make-temp-file "quelpa-temp-dir-" t)))
+    (unwind-protect
+        (progn
+          ;; Getting the path from :path
+          (let* ((path (expand-file-name (plist-get config :path)))
+                 (dest-path (expand-file-name (file-name-nondirectory path) temp-dir)))
+            ;; Copying files or directories to the temporary directory
+            (if (file-directory-p path)
+                (copy-directory path dest-path t t t)
+              (copy-file path dest-path t t t t))
+            ;; Setting write permissions for all files and directories
+            (let ((add-write-permission
+                   (lambda (file)
+                     (set-file-modes file (logior (file-modes file) #o200)))))
+              (dolist (file (directory-files-recursively temp-dir ".*"))
+                (funcall add-write-permission file))
+              (funcall add-write-permission dest-path))
+            ;; Calling quelpa-check-hash with modified files
+            (quelpa-check-hash name config dest-path dir)))
+      ;; Deleting the temporary directory
+      (delete-directory temp-dir t))))
 
 (defun quelpa-build--checkout-url (name config dir)
   "Build according to an URL with config CONFIG into DIR as NAME.
